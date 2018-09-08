@@ -1235,11 +1235,11 @@ public:
     snapshot_loader<Entity> loader() ENTT_NOEXCEPT {
         using assure_fn_type = void(registry &, const entity_type, const bool);
 
-        assure_fn_type *assure = [](registry &reg, const entity_type entity, const bool destroyed) {
+        assure_fn_type *assure = [](registry &registry, const entity_type entity, const bool destroyed) {
             using promotion_type = std::conditional_t<sizeof(size_type) >= sizeof(entity_type), size_type, entity_type>;
             // explicit promotion to avoid warnings with std::uint16_t
             const auto entt = promotion_type{entity} & traits_type::entity_mask;
-            auto &entities = reg.entities;
+            auto &entities = registry.entities;
 
             if(!(entt < entities.size())) {
                 auto curr = entities.size();
@@ -1250,7 +1250,7 @@ public:
             entities[entt] = entity;
 
             if(destroyed) {
-                reg.destroy(entity);
+                registry.destroy(entity);
                 const auto version = entity & (traits_type::version_mask << traits_type::entity_shift);
                 entities[entt] = ((entities[entt] & traits_type::entity_mask) | version);
             }

@@ -13,6 +13,8 @@
 #include "entity/sparse_set.hpp"
 #include "entity/view.hpp"
 #include "locator/locator.hpp"
+#include "meta/factory.hpp"
+#include "meta/meta.hpp"
 #include "process/process.hpp"
 #include "process/scheduler.hpp"
 #include "resource/cache.hpp"
