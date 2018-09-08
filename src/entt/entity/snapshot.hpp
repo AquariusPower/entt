@@ -40,8 +40,8 @@ class snapshot final {
 
     using follow_fn_type = Entity(const registry<Entity> &, const Entity);
 
-    snapshot(const registry<Entity> &registry, Entity seed, follow_fn_type *follow) ENTT_NOEXCEPT
-        : registry{registry},
+    snapshot(const registry<Entity> &reg, Entity seed, follow_fn_type *follow) ENTT_NOEXCEPT
+        : reg{reg},
           seed{seed},
           follow{follow}
     {}
@@ -53,8 +53,8 @@ class snapshot final {
         while(first != last) {
             const auto entity = *(first++);
 
-            if(registry.template has<Component>(entity)) {
-                archive(entity, registry.template get<Component>(entity));
+            if(reg.template has<Component>(entity)) {
+                archive(entity, reg.template get<Component>(entity));
             }
         }
     }
@@ -66,7 +66,7 @@ class snapshot final {
 
         while(begin != last) {
             const auto entity = *(begin++);
-            ((registry.template has<Component>(entity) ? ++size[Indexes] : size[Indexes]), ...);
+            ((reg.template has<Component>(entity) ? ++size[Indexes] : size[Indexes]), ...);
         }
 
         (get<Component>(archive, size[Indexes], first, last), ...);
@@ -95,8 +95,8 @@ public:
      */
     template<typename Archive>
     const snapshot & entities(Archive &archive) const {
-        archive(static_cast<Entity>(registry.alive()));
-        registry.each([&archive](const auto entity) { archive(entity); });
+        archive(static_cast<Entity>(reg.alive()));
+        reg.each([&archive](const auto entity) { archive(entity); });
         return *this;
     }
 
@@ -112,7 +112,7 @@ public:
      */
     template<typename Archive>
     const snapshot & destroyed(Archive &archive) const {
-        auto size = registry.size() - registry.alive();
+        auto size = reg.size() - reg.alive();
         archive(static_cast<Entity>(size));
 
         if(size) {
@@ -120,7 +120,7 @@ public:
             archive(curr);
 
             for(--size; size; --size) {
-                curr = follow(registry, curr);
+                curr = follow(reg, curr);
                 archive(curr);
             }
         }
@@ -142,14 +142,14 @@ public:
     template<typename... Component, typename Archive>
     const snapshot & component(Archive &archive) const {
         if constexpr(sizeof...(Component) == 1) {
-            const auto sz = registry.template size<Component...>();
-            const auto *entities = registry.template data<Component...>();
+            const auto sz = reg.template size<Component...>();
+            const auto *entities = reg.template data<Component...>();
 
             archive(static_cast<Entity>(sz));
 
             for(std::remove_const_t<decltype(sz)> i{}; i < sz; ++i) {
                 const auto entity = entities[i];
-                archive(entity, registry.template get<Component...>(entity));
+                archive(entity, reg.template get<Component...>(entity));
             };
         } else {
             (component<Component>(archive), ...);
@@ -179,7 +179,7 @@ public:
     }
 
 private:
-    const registry<Entity> &registry;
+    const registry<Entity> &reg;
     const Entity seed;
     follow_fn_type *follow;
 };
@@ -202,12 +202,12 @@ class snapshot_loader final {
 
     using assure_fn_type = void(registry<Entity> &, const Entity, const bool);
 
-    snapshot_loader(registry<Entity> &registry, assure_fn_type *assure_fn) ENTT_NOEXCEPT
-        : registry{registry},
+    snapshot_loader(registry<Entity> &reg, assure_fn_type *assure_fn) ENTT_NOEXCEPT
+        : reg{reg},
           assure_fn{assure_fn}
     {
         // restore a snapshot as a whole requires a clean registry
-        assert(!registry.capacity());
+        assert(!reg.capacity());
     }
 
     template<typename Archive>
@@ -218,7 +218,7 @@ class snapshot_loader final {
         while(length--) {
             Entity entity{};
             archive(entity);
-            assure_fn(registry, entity, destroyed);
+            assure_fn(reg, entity, destroyed);
         }
     }
 
@@ -232,8 +232,8 @@ class snapshot_loader final {
             Type instance{};
             archive(entity, instance);
             static constexpr auto destroyed = false;
-            assure_fn(registry, entity, destroyed);
-            registry.template assign<Type>(args..., entity, std::as_const(instance));
+            assure_fn(reg, entity, destroyed);
+            reg.template assign<Type>(args..., entity, std::as_const(instance));
         }
     }
 
@@ -312,15 +312,15 @@ public:
      * @return A valid loader to continue restoring data.
      */
     const snapshot_loader & orphans() const {
-        registry.orphans([this](const auto entity) {
-            registry.destroy(entity);
+        reg.orphans([this](const auto entity) {
+            reg.destroy(entity);
         });
 
         return *this;
     }
 
 private:
-    registry<Entity> &registry;
+    registry<Entity> &reg;
     assure_fn_type *assure_fn;
 };
 
@@ -349,9 +349,9 @@ class continuous_loader final {
         const auto it = remloc.find(entity);
 
         if(it == remloc.cend()) {
-            const auto local = registry.create();
+            const auto local = reg.create();
             remloc.emplace(entity, std::make_pair(local, true));
-            registry.destroy(local);
+            reg.destroy(local);
         }
     }
 
@@ -359,13 +359,13 @@ class continuous_loader final {
         const auto it = remloc.find(entity);
 
         if(it == remloc.cend()) {
-            const auto local = registry.create();
+            const auto local = reg.create();
             remloc.emplace(entity, std::make_pair(local, true));
         } else {
             remloc[entity].first =
-                    registry.valid(remloc[entity].first)
+                    reg.valid(remloc[entity].first)
                     ? remloc[entity].first
-                    : registry.create();
+                    : reg.create();
 
             // set the dirty flag
             remloc[entity].second = true;
@@ -403,8 +403,8 @@ class continuous_loader final {
         for(auto &&ref: remloc) {
             const auto local = ref.second.first;
 
-            if(registry.valid(local)) {
-                registry.template reset<Component>(local);
+            if(reg.valid(local)) {
+                reg.template reset<Component>(local);
             }
         }
     }
@@ -430,10 +430,10 @@ public:
 
     /**
      * @brief Constructs a loader that is bound to a given registry.
-     * @param registry A valid reference to a registry.
+     * @param reg A valid reference to a registry.
      */
-    continuous_loader(registry<entity_type> &registry) ENTT_NOEXCEPT
-        : registry{registry}
+    continuous_loader(registry<entity_type> &reg) ENTT_NOEXCEPT
+        : reg{reg}
     {}
 
     /*! @brief Copying a snapshot loader isn't allowed. */
@@ -500,7 +500,7 @@ public:
     template<typename... Component, typename Archive, typename... Type, typename... Member>
     continuous_loader & component(Archive &archive, Member Type:: *... member) {
         auto apply = [this](const auto entity, const auto &component) {
-            registry.template accommodate<std::decay_t<decltype(component)>>(entity, component);
+            reg.template accommodate<std::decay_t<decltype(component)>>(entity, component);
         };
 
         (reset<Component>(), ...);
@@ -527,8 +527,8 @@ public:
                 dirty = false;
                 ++it;
             } else {
-                if(registry.valid(local)) {
-                    registry.destroy(local);
+                if(reg.valid(local)) {
+                    reg.destroy(local);
                 }
 
                 it = remloc.erase(it);
@@ -549,8 +549,8 @@ public:
      * @return A non-const reference to this loader.
      */
     continuous_loader & orphans() {
-        registry.orphans([this](const auto entity) {
-            registry.destroy(entity);
+        reg.orphans([this](const auto entity) {
+            reg.destroy(entity);
         });
 
         return *this;
@@ -584,7 +584,7 @@ public:
 
 private:
     std::unordered_map<Entity, std::pair<Entity, bool>> remloc;
-    registry<Entity> &registry;
+    registry<Entity> &reg;
 };
 
 
