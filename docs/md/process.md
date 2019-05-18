@@ -24,7 +24,7 @@ that users can use to define and execute cooperative processes.
 
 # The process
 
-A typical process must inherit from the `Process` class template that stays true
+A typical process must inherit from the `process` class template that stays true
 to the CRTP idiom. Moreover, derived classes must specify what's the intended
 type for elapsed times.
 
@@ -40,11 +40,12 @@ class wants to _override_ the default behavior):
   least define it to work properly. The `void *` parameter is an opaque pointer
   to user data (if any) forwarded directly to the process during an update.
 
-* `void init(void *);`
+* `void init();`
 
-  It's invoked at the first tick, immediately before an update. The `void *`
-  parameter is an opaque pointer to user data (if any) forwarded directly to the
-  process during an update.
+  It's invoked when the process joins the running queue of a scheduler. This
+  happens as soon as it's attached to the scheduler if the process is a top
+  level one, otherwise when it replaces its parent if the process is a
+  continuation.
 
 * `void succeeded();`
 
@@ -70,11 +71,11 @@ life cycle of a process from a derived class.
 Here is a minimal example for the sake of curiosity:
 
 ```cpp
-struct MyProcess: entt::Process<MyProcess, std::uint32_t> {
+struct my_process: entt::process<my_process, std::uint32_t> {
     using delta_type = std::uint32_t;
 
     void update(delta_type delta, void *) {
-        remaining = delta > remaining ? delta_type{] : (remaining - delta);
+        remaining -= std::min(remaining, delta);
 
         // ...
 
@@ -83,12 +84,8 @@ struct MyProcess: entt::Process<MyProcess, std::uint32_t> {
         }
     }
 
-    void init(void *data) {
-        remaining = *static_cast<delta_type *>(data);
-    }
-
 private:
-    delta_type remaining;
+    delta_type remaining{1000u};
 };
 ```
 
@@ -127,17 +124,17 @@ cycles.
 
 Each process is invoked once per tick. If it terminates, it's removed
 automatically from the scheduler and it's never invoked again. Otherwise it's
-a good candidate to run once more the next tick.<br/>
-A process can also have a child. In this case, the process is replaced with
-its child when it terminates if it returns with success. In case of errors,
-both the process and its child are discarded. This way, it's easy to create
-chain of processes to run sequentially.
+a good candidate to run one more time the next tick.<br/>
+A process can also have a child. In this case, the parent process is replaced
+with its child when it terminates and only if it returns with success. In case
+of errors, both the parent process and its child are discarded. This way, it's
+easy to create chain of processes to run sequentially.
 
 Using a scheduler is straightforward. To create it, users must provide only the
 type for the elapsed times and no arguments at all:
 
 ```cpp
-Scheduler<std::uint32_t> scheduler;
+entt::scheduler<std::uint32_t> scheduler;
 ```
 
 It has member functions to query its internal data structures, like `empty` or
@@ -148,7 +145,7 @@ It has member functions to query its internal data structures, like `empty` or
 const auto empty = scheduler.empty();
 
 // gets the number of processes still running
-Scheduler<std::uint32_t>::size_type size = scheduler.size();
+entt::scheduler<std::uint32_t>::size_type size = scheduler.size();
 
 // resets the scheduler to its initial state and discards all the processes
 scheduler.clear();
@@ -156,12 +153,12 @@ scheduler.clear();
 
 To attach a process to a scheduler there are mainly two ways:
 
-* If the process inherits from the `Process` class template, it's enough to
+* If the process inherits from the `process` class template, it's enough to
   indicate its type and submit all the parameters required to construct it to
   the `attach` member function:
 
   ```cpp
-  scheduler.attach<MyProcess>("foobar");
+  scheduler.attach<my_process>("foobar");
   ```
 
 * Otherwise, in case of a lambda or a functor, it's enough to provide an
@@ -185,11 +182,11 @@ scheduler.attach([](auto delta, void *, auto succeed, auto fail) {
     // ...
 })
 // appends a child in the form of a process class
-.then<MyProcess>();
+.then<my_process>();
 ```
 
-To update a scheduler and thus all its processes, the `update` member function
-is the way to go:
+To update a scheduler and therefore all its processes, the `update` member
+function is the way to go:
 
 ```cpp
 // updates all the processes, no user data are provided
